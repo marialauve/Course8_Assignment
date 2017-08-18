@@ -1,0 +1,176 @@
+---
+title: "Building a Model to Predict Classe"
+author: "Maria Lauve"
+date: "August 18, 2017"
+output:
+  html_document:
+    keep_md: yes
+---
+
+## Assignment
+
+Six subjects are asked to repeatedly perform an activity five different ways. Each of the five ways of performing the task is assigned to a "classe" (A, B, C, D, or E).
+
+For each repetition of the activity, a number of metrics are recorded from accelerometers placed on the belt, arm, dumbbell, and forearm of the subjects.
+
+The purpose of this assignment is to build a model that is able to predict which of the five methods for performing a task a subject is using based on the recorded accelerometer measurements.
+
+## Setting up the data and environment
+
+The first thing I do is call on the necessary libraries and import the test and training sets.
+
+```{r setup}
+library(caret)
+library(rpart.plot)
+
+train = read.csv("./pml-training.csv")
+test = read.csv("./pml-testing.csv")
+```
+
+## Data exploration
+
+The next thing I do is some data exploration to better understand the nature of the data.
+
+I confirm that there are five classes: A, B, C, D, E.
+And that there are six subjects: adelmo, charles, eurico, jeremy, pedro.
+
+I also run some trellis plots to see how the reported accelerometer measurements vary by user_name (subject) and classe.
+
+```{r explore}
+unique(train$classe)
+unique(train$user_name)
+
+#Example trellis plot by user_name, classe
+xyplot(roll_belt ~ X | classe * user_name, train)
+```
+
+## Building a model
+
+As a first attempt at builing a model, I decide to try a model that includes all accelerator measurements that appear to be populated in the dataset.
+
+```{r features, include=FALSE}
+features <- c("classe",
+              "roll_belt",
+              "pitch_belt",
+              "yaw_belt",
+              "total_accel_belt",
+              "gyros_belt_x",
+              "gyros_belt_y",
+              "gyros_belt_z",
+              "accel_belt_x",
+              "accel_belt_y",
+              "accel_belt_z",
+              "magnet_belt_x",
+              "magnet_belt_y",
+              "magnet_belt_z",
+              "roll_arm",
+              "pitch_arm",
+              "yaw_arm",
+              "total_accel_arm",
+              "gyros_arm_x",
+              "gyros_arm_y",
+              "gyros_arm_z",
+              "accel_arm_x",
+              "accel_arm_y",
+              "accel_arm_z",
+              "magnet_arm_x",
+              "magnet_arm_y",
+              "magnet_arm_z",
+              "roll_dumbbell",
+              "pitch_dumbbell",
+              "yaw_dumbbell",
+              "total_accel_dumbbell",
+              "gyros_dumbbell_x",
+              "gyros_dumbbell_y",
+              "gyros_dumbbell_z",
+              "accel_dumbbell_x",
+              "accel_dumbbell_y",
+              "accel_dumbbell_z",
+              "magnet_dumbbell_x",
+              "magnet_dumbbell_y",
+              "magnet_dumbbell_z",
+              "roll_forearm",
+              "pitch_forearm",
+              "yaw_forearm",
+              "total_accel_forearm",
+              "gyros_forearm_x",
+              "gyros_forearm_y",
+              "gyros_forearm_z",
+              "accel_forearm_x",
+              "accel_forearm_y",
+              "accel_forearm_z",
+              "magnet_forearm_x",
+              "magnet_forearm_y",
+              "magnet_forearm_z"
+)
+```
+
+Using these features, I first attempt to run a single decision-tree model using the rpart function. To save on computing power, I use a 10-fold cross-validation model that repeats one time.
+
+```{r cv with rpart}
+# Set up caret to perform 10-fold cross validation repeated X times
+caret.control <- trainControl(method="repeatedcv",number=10,repeats=1)
+
+rpart.cv <- train(classe ~ .,
+                  data = train[, features],
+                  method = "rpart",
+                  trControl = caret.control,
+                  tuneLength = 7)
+```
+
+The results of the cross-validation suggest that the predictive power of this initial model is not very good.
+
+```{r predict rpart}
+# Display the results of the cross validation run
+rpart.cv
+
+# Display the standard deviation of the model
+cat(paste("\nCross validation standard deviation:",  
+          sd(rpart.cv$resample$Accuracy), "\n", sep = " "))
+```
+
+Finally, I run the same model, but use a random forest in place of rpart.
+Again, I save on computing power by using a 5-tree model even though using many more trees may have improved the predicting power.
+
+```{r cv with rf}
+caret.control <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 1)
+
+# For random forest
+rf.cv <- train(classe ~ .,
+               data = train[, features],
+               method = "rf",
+               trControl = caret.control,
+               tuneLength = 7,
+               ntree = 5,
+               importance = TRUE)
+
+# Display the results of the cross validation run
+rf.cv
+
+# Display the standard deviation
+cat(paste("\nCross validation standard deviation:",  
+          sd(rf.cv$resample$Accuracy), "\n", sep = " "))
+```
+
+## Interpreting the results
+
+The model output indicates that, within the training set, the model has 99 percent accuracy using the model's "best" parameters.
+
+We can further tell which variables had the most explanator power by graphing the "importance" of variables using the "importance" function.
+
+Bigger values indicate more powerful predictors.
+
+```{r importance}
+# Pull out the the trained model using the best parameters
+rf.best <- rf.cv$finalModel
+
+# Show variable importance
+importance(rf.best)
+varImpPlot(rf.best)
+```
+
+## Conclusion
+
+No further adjustments to the model were made given that this model managed to correctly predict 20/20 of the test set.
